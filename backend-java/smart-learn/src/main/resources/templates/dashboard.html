@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Smart-Learn AI Tutor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    
+    <style>
+        body { 
+            background-color: #0f172a; 
+            color: #f8fafc; 
+            font-family: 'Inter', sans-serif; 
+            overflow-x: hidden;
+        }
+        
+        /* Navbar */
+        .navbar { background-color: #1e293b !important; border-bottom: 1px solid #334155; padding: 15px 20px; }
+        .navbar-brand { font-weight: 800; letter-spacing: 0.5px; color: #38bdf8 !important; }
+
+        /* Main Layout Cards */
+        .glass-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        /* Video Player section */
+        .video-wrapper {
+            position: relative;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #334155;
+            background: #000;
+        }
+        video { width: 100%; display: block; }
+
+        /* Stats Panel */
+        .stat-label { font-size: 12px; text-transform: uppercase; color: #94a3b8; font-weight: 600; letter-spacing: 1px; }
+        .status-badge {
+            font-size: 28px;
+            font-weight: 800;
+            padding: 15px;
+            border-radius: 12px;
+            text-align: center;
+            margin: 10px 0 25px 0;
+            background: #334155;
+            transition: all 0.3s ease;
+        }
+        
+        /* Progress Bar */
+        .score-display { font-size: 48px; font-weight: 800; text-align: center; margin-bottom: 5px; }
+        .progress { height: 12px; border-radius: 10px; background-color: #334155; margin-bottom: 20px;}
+        .progress-bar { transition: width 0.4s ease, background-color 0.4s ease; font-weight: bold;}
+
+        /* Modals & Overlays */
+        #break-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.98); z-index: 9999; text-align: center; padding-top: 10%;
+            backdrop-filter: blur(10px);
+        }
+        .break-timer { font-size: 100px; font-weight: 800; color: #ef4444; text-shadow: 0 0 20px rgba(239,68,68,0.4); }
+
+        #confusion-modal {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(30, 41, 59, 0.95); padding: 40px; border-radius: 16px; z-index: 1000;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8); text-align: center; border: 2px solid #eab308;
+            backdrop-filter: blur(8px); width: 80%; max-width: 500px;
+        }
+
+        /* Status Colors */
+        .text-focus { color: #10b981; text-shadow: 0 0 10px rgba(16,185,129,0.3); }
+        .text-bored { color: #f59e0b; }
+        .text-sleep { color: #ef4444; }
+        .bg-focus { background-color: #10b981; }
+        .bg-warning-custom { background-color: #f59e0b; }
+        .bg-danger-custom { background-color: #ef4444; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-dark">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand mb-0 h2"><i class="fas fa-microchip me-2"></i>Smart-Learn Interface</span>
+            <button id="end-session-btn" onclick="endSessionAndReport()" class="btn btn-outline-danger btn-sm px-3 rounded-pill fw-bold">
+                <i class="fas fa-flag-checkered me-2"></i>End & Send Report
+            </button>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4 px-4">
+        <div class="row g-4">
+            
+            <div class="col-lg-8">
+                <div class="glass-card h-100">
+                    <h4 class="mb-3 fw-bold" th:text="${videoTitle}"><i class="fas fa-play-circle text-info me-2"></i>Active Lecture</h4>
+                    
+                    <div class="video-wrapper">
+                        <video id="mainVideo" controls>
+                            <source th:src="@{'/videos/' + ${videoId} + '.mp4'}" type="video/mp4">
+                        </video>
+
+                        <div id="confusion-modal">
+                            <i class="fas fa-lightbulb fa-4x text-warning mb-3"></i>
+                            <h3 class="fw-bold text-white">Need a quick review?</h3>
+                            <p class="text-muted mb-4">You've looked confused for a bit. Want to jump back?</p>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-warning fw-bold rounded-pill" onclick="rewind(60)"><i class="fas fa-undo me-2"></i>Rewind 1 Minute</button>
+                                <button class="btn btn-outline-light fw-bold rounded-pill" onclick="rewind(300)"><i class="fas fa-history me-2"></i>Rewind 5 Minutes</button>
+                                <button class="btn btn-link text-muted mt-2 text-decoration-none" onclick="dismissConfusion()">Resume Video</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <div class="glass-card h-100 d-flex flex-column justify-content-center">
+                    
+                    <div class="stat-label text-center"><i class="fas fa-eye me-2"></i>AI Vision Status</div>
+                    <div id="status-display" class="status-badge text-muted">CONNECTING...</div>
+
+                    <hr class="border-secondary my-4">
+
+                    <div class="stat-label text-center mb-2"><i class="fas fa-chart-line me-2"></i>Session Focus Score</div>
+                    <div id="score-text" class="score-display text-focus">100%</div>
+                    
+                    <div class="progress">
+                        <div id="score-bar" class="progress-bar bg-focus" role="progressbar" style="width: 100%;"></div>
+                    </div>
+                    <p class="text-center text-muted small mt-2" id="score-msg">Perfect engagement detected.</p>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="break-overlay">
+        <i class="fas fa-shield-alt fa-5x mb-4 text-danger"></i>
+        <h1 class="text-white fw-bold display-3">SYSTEM LOCKED</h1>
+        <p class="lead text-muted fs-4">Cognitive fatigue detected. Focus score plummeted below 30%.</p>
+        <div id="break-countdown" class="break-timer">05:00</div>
+        <p class="mt-4 text-secondary"><i class="fas fa-lock me-2"></i>Please step away from the screen to reset.</p>
+    </div>
+
+    <script>
+        // Global Tracking Variables
+        let totalSleeps = 0;
+        let totalConfusions = 0;
+        let sessionSeconds = 0;
+        let wasSleeping = false; 
+
+        // Start a session timer
+        setInterval(() => { sessionSeconds++; }, 1000);
+        
+        // System Variables
+        let score = 100;
+        let isBreakMode = false;
+        let isConfusionActive = false;
+        let confusionTimer = 0; 
+        
+        const video = document.getElementById("mainVideo");
+        const statusDisplay = document.getElementById("status-display");
+        const scoreText = document.getElementById("score-text");
+        const scoreBar = document.getElementById("score-bar");
+        const scoreMsg = document.getElementById("score-msg");
+        const confusionModal = document.getElementById("confusion-modal");
+        const breakOverlay = document.getElementById("break-overlay");
+
+        // Polling Loop (1 second)
+        setInterval(() => {
+            if(isBreakMode) return; 
+
+            fetch('/api/status')
+                .then(response => response.text())
+                .then(status => {
+                    updateSystem(status);
+                })
+                .catch(() => console.log("Waiting for AI Engine..."));
+        }, 1000);
+
+       function updateSystem(status) {
+            // 1. Manage Confusion Timer & Reset Sleep Tracker
+            if (!status.includes("CONFUSED")) {
+                confusionTimer = 0; 
+            }
+            if (!status.includes("SLEEPING")) {
+                wasSleeping = false; 
+            }
+
+            // 2. State Logic & UI Colors
+            if (status.includes("FOCUSED")) {
+                statusDisplay.innerText = "FOCUSED";
+                statusDisplay.className = "status-badge text-focus";
+                if(score < 100) score += 1;
+                if(video.paused && !isConfusionActive) video.play(); 
+            } 
+            else if (status.includes("BORED")) {
+                statusDisplay.innerText = "DISTRACTED";
+                statusDisplay.className = "status-badge text-bored";
+                if(score > 0) score -= 2;
+            }
+            else if (status.includes("SLEEPING")) {
+                statusDisplay.innerText = "DROWSY / SLEEPING";
+                statusDisplay.className = "status-badge text-sleep";
+                if(score > 0) score -= 5;
+                video.pause();
+                
+                // Telegram Tracking
+                if (!wasSleeping) {
+                    totalSleeps++; 
+                    wasSleeping = true; 
+                }
+            }
+            else if (status.includes("CONFUSED")) {
+                if (!isConfusionActive) {
+                    confusionTimer++;
+                    statusDisplay.innerText = `CONFUSED (${confusionTimer}s)`;
+                    statusDisplay.className = "status-badge text-bored";
+                    
+                    if (confusionTimer >= 15) {
+                        // Telegram Tracking
+                        totalConfusions++; 
+                        
+                        triggerConfusion();
+                        confusionTimer = 0; 
+                    }
+                }
+            }
+
+            // 3. Update Score Bar UI
+            scoreText.innerText = score + "%";
+            scoreBar.style.width = score + "%";
+            
+            if(score > 70) {
+                scoreText.className = "score-display text-focus";
+                scoreBar.className = "progress-bar bg-focus";
+                scoreMsg.innerText = "Good engagement. Keep it up.";
+            } else if (score > 30) {
+                scoreText.className = "score-display text-bored";
+                scoreBar.className = "progress-bar bg-warning-custom";
+                scoreMsg.innerText = "Attention dropping. Try to re-focus.";
+            } else {
+                scoreText.className = "score-display text-sleep";
+                scoreBar.className = "progress-bar bg-danger-custom";
+                scoreMsg.innerText = "Critical fatigue level.";
+            }
+
+            // 4. Mandatory Break Trigger
+            if (score < 30) {
+                startMandatoryBreak();
+            }
+        }
+
+        // --- Functions ---
+        function triggerConfusion() {
+            isConfusionActive = true;
+            video.pause();
+            confusionModal.style.display = "block";
+        }
+
+        function rewind(seconds) {
+            video.currentTime = Math.max(0, video.currentTime - seconds);
+            dismissConfusion();
+        }
+
+        function dismissConfusion() {
+            confusionModal.style.display = "none";
+            isConfusionActive = false;
+            video.play();
+        }
+
+        function startMandatoryBreak() {
+            isBreakMode = true;
+            video.pause();
+            breakOverlay.style.display = "block";
+            
+            let duration = 5 * 60; 
+            let timer = setInterval(() => {
+                let minutes = Math.floor(duration / 60);
+                let seconds = duration % 60;
+                
+                document.getElementById("break-countdown").innerText = 
+                    (minutes < 10 ? "0" : "") + minutes + ":" + (seconds < 10 ? "0" : "") + seconds;
+
+                if (--duration < 0) {
+                    clearInterval(timer);
+                    endBreak();
+                }
+            }, 1000);
+        }
+
+        function endBreak() {
+            isBreakMode = false;
+            score = 100;
+            breakOverlay.style.display = "none";
+            alert("Break complete. System unlocked. Let's focus!");
+        }
+
+        // --- TELEGRAM REPORTING LOGIC ---
+        function endSessionAndReport() {
+            // Change button UI to show it's working
+            const endBtn = document.getElementById("end-session-btn");
+            endBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Sending Report...';
+            endBtn.disabled = true;
+
+            // Format duration nicely
+            let minutes = Math.floor(sessionSeconds / 60);
+            let seconds = sessionSeconds % 60;
+            let timeString = `${minutes}m ${seconds}s`;
+
+            // Package the data for Java
+            const reportData = {
+                score: score.toString(),
+                sleeps: totalSleeps.toString(),
+                confusions: totalConfusions.toString(),
+                duration: timeString
+            };
+
+            // Send to Java Spring Boot backend
+            fetch('/api/report', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(reportData)
+            })
+            .then(response => {
+                alert("Session Ended. Report sent to Telegram!");
+                window.location.href = "/"; // Redirect to home page
+            })
+            .catch(error => {
+                console.error('Error sending report:', error);
+                alert("Session ended, but Telegram report failed to send. Check Java Console.");
+                window.location.href = "/";
+            });
+        }
+    </script>
+</body>
+</html>
